@@ -2,7 +2,6 @@
 #include<cuda.h>
 
 #define BLOCKSIZE 16
-#define SIZE 1024
 #define EPS 1.0e-15
 
 cudaDeviceProp deviceProp;	
@@ -23,7 +22,10 @@ void cpu_multiply()
 {
 	cpu_result = (double *)malloc(mat_row_size*sizeof(double));
 	if(cpu_result==NULL)
-                not_enough_memory("cpu_result","vectmatmul",size,"double");
+                {
+                        printf("Not enough memory");
+                        exit(-1);
+                }
 
 	int i,j;
 	for(i=0;i<mat_row_size;i++)
@@ -37,7 +39,7 @@ void device_free(double * arr[],int len)
 {
         for(int i=0;i<len;i++)
                 cudaFree(arr[i]);
-        printf("mem freed\n");
+        
 }
 
 /* function to calculate relative error*/
@@ -50,7 +52,7 @@ void relative_error(double* device,double* host,int size)
         for( i = 0; i < size; ++i) 
         {
                
-                relativeError = fabs((host[i] - device[i]) / max(fabs(host[i]), fabs(device[i]));
+                relativeError = fabs((host[i] - device[i]) )/ max(fabs(host[i]), fabs(device[i]));
                 
                 if (relativeError > EPS && relativeError != 0.0e+00 )
                 {       
@@ -63,9 +65,7 @@ void relative_error(double* device,double* host,int size)
         {
                 printf(" \n Verification failed with error %e on machine with precision %e", maxError, EPS);
         }
-        else
-                printf("\n Verification success\n");
-
+        
 }
 
 void fill_matrix(double* vec,int size)
@@ -143,7 +143,7 @@ double sim()
 	cudaMemcpy((void*)device_matrix, (void*)host_matrix, mat_row_size*mat_col_size*sizeof(double) ,cudaMemcpyHostToDevice);
 	cudaMemcpy((void*)device_vector, (void*)host_vector,v_length*sizeof(double),cudaMemcpyHostToDevice);
 
-	cudaEventRecord (start, 0));
+	cudaEventRecord (start, 0);
 	
 	MatVectMul();
 	
@@ -153,7 +153,6 @@ double sim()
 
 	Tsec= 1.0e-3*elapsedTime;
  	
-        calculate_gflops(Tsec);
         double ret = calculate_gbs(Tsec);
 	
 	
@@ -161,9 +160,7 @@ double sim()
 
 	cpu_multiply();
   	relative_error(cpu_result,host_result,size);
-   	printf("\n ----------------------------------------------------------------------\n");
-
-	/*free the memory from GPU */
+   	/*free the memory from GPU */
 	double *array[3];
         array[0]=device_matrix;
         array[1]=device_vector;
@@ -191,10 +188,11 @@ int main()
         cudaGetDeviceProperties(&deviceProp,device);
         printf("Using device %d: %s \n", device, deviceProp.name);
 
-        for(size = SIZE;size <= 32*SIZE;size *=2)
+        printf("Size \t \t Bandwith\n");
+        for(size = 16 ;size <= 8192;size *=2)
         {
                 double gbs = sim();
-                printf("Size: %d Bandwith:%f", size, gbs);
+                printf("%d \t \t %f\n", size, gbs);
         }
 
 
