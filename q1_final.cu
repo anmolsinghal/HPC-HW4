@@ -8,170 +8,67 @@
 cudaDeviceProp deviceProp;	
 
 
-double *host_Mat,*host_Vect,*host_ResVect,*cpu_ResVect;
-double *device_Mat,*device_Vect,*device_ResVect;
-int     vlength ,matRowSize , matColSize;
-int     device_Count;
-int     size = SIZE;
-
-/*mem error*/
-void mem_error(char *arrayname, char *benchmark, int len, char *type)
-{
-        printf("\nMemory not sufficient to allocate for array %s\n\tBenchmark : %s  \n\tMemory requested = %d number of %s elements\n",arrayname, benchmark, len, type);
-        exit(-1);
-}
-
-/*calculate Gflops*/
-double calculate_gflops(float &Tsec)
-{
-        float gflops=(1.0e-9 * (( 2.0 * size*size )/Tsec));
-	return gflops;
-}
+double *host_matrix,*host_vector,*host_result,*cpu_result;
+double *device_matrix,*device_vector,*device_result;
+int     v_length ,mat_row_size , mat_col_size;
+int     size = BLOCKSIZE;
 
 double calculate_gbs(float &Tsec)
 {
-        float bw=(1.0e-9 * (( size*size +size )/Tsec));
+        float bw=(1.0e-9 * (( size*size + size )/Tsec));
 	return bw;
 }
 
-/*sequential function for mat vect multiplication*/
-void CPU_MatVect()
+void cpu_multiply()
 {
-	cpu_ResVect = (double *)malloc(matRowSize*sizeof(double));
-	if(cpu_ResVect==NULL)
-                mem_error("cpu_ResVect","vectmatmul",size,"double");
+	cpu_result = (double *)malloc(mat_row_size*sizeof(double));
+	if(cpu_result==NULL)
+                not_enough_memory("cpu_result","vectmatmul",size,"double");
 
 	int i,j;
-	for(i=0;i<matRowSize;i++)
-	{cpu_ResVect[i]=0;
-	for(j=0;j<matColSize;j++)
-	cpu_ResVect[i]+=host_Mat[i*vlength+j]*host_Vect[j];
+	for(i=0;i<mat_row_size;i++)
+	{cpu_result[i]=0;
+	for(j=0;j<mat_col_size;j++)
+	cpu_result[i]+=host_matrix[i*v_length+j]*host_vector[j];
 	}
 }
 
-/*Check for safe return of all calls to the device */
-void CUDA_SAFE_CALL(cudaError_t call)
-{
-        cudaError_t ret = call;
-        //printf("RETURN FROM THE CUDA CALL:%d\t:",ret);                                        
-        switch(ret)
-        {
-                case cudaSuccess:
-                //              printf("Success\n");                    
-                                break;
-        /*      case cudaErrorInvalidValue:                             
-                                {
-                                printf("ERROR: InvalidValue:%i.\n",__LINE__);
-                                exit(-1);
-                                break;  
-                                }                       
-                case cudaErrorInvalidDevicePointer:                     
-                                {
-                                printf("ERROR:Invalid Device pointeri:%i.\n",__LINE__);
-                                exit(-1);
-                                break;
-                                }                       
-                case cudaErrorInvalidMemcpyDirection:                   
-                                {
-                                printf("ERROR:Invalid memcpy direction:%i.\n",__LINE__);        
-                                exit(-1);
-                                break;
-                                }                       */
-                default:
-                        {
-                                printf(" ERROR at line :%i.%d' ' %s\n",__LINE__,ret,cudaGetErrorString(ret));
-                                exit(-1);
-                                break;
-                        }
-        }
-}
- 
-
-/*free memory*/
-void dfree(double * arr[],int len)
+void device_free(double * arr[],int len)
 {
         for(int i=0;i<len;i++)
-                CUDA_SAFE_CALL(cudaFree(arr[i]));
+                cudaFree(arr[i]);
         printf("mem freed\n");
 }
 
 /* function to calculate relative error*/
-void relError(double* dRes,double* hRes,int size)
+void relative_error(double* device,double* host,int size)
 {
-        double relativeError=0.0,errorNorm=0.0;
+        double relativeError=0.0,maxError=0.0;
         int flag=0;
         int i;
 
-        for( i = 0; i < size; ++i) {
-                if (fabs(hRes[i]) > fabs(dRes[i]))
-                        relativeError = fabs((hRes[i] - dRes[i]) / hRes[i]);
-                else
-                        relativeError = fabs((dRes[i] - hRes[i]) / dRes[i]);
-
+        for( i = 0; i < size; ++i) 
+        {
+               
+                relativeError = fabs((host[i] - device[i]) / max(fabs(host[i]), fabs(device[i]));
+                
                 if (relativeError > EPS && relativeError != 0.0e+00 )
-                {
-                        if(errorNorm < relativeError)
-                        {
-                                errorNorm = relativeError;
-                                flag=1;
-                        }
+                {       
+                        maxError = max(maxError, relativeError);
+                        flag = 1;                        
                 }
 
         }
         if( flag == 1)
         {
-                printf(" \n Results verfication : Failed");
-                printf(" \n Considered machine precision : %e", EPS);
-                printf(" \n Relative Error                  : %e\n", errorNorm);
-
+                printf(" \n Verification failed with error %e on machine with precision %e", maxError, EPS);
         }
         else
-                printf("\n Results verfication : Success\n");
+                printf("\n Verification success\n");
 
 }
 
-
-/*prints the result in screen*/
-void print_on_screen(char * program_name,float tsec,double gflops,int size,int flag)//flag=1 if gflops has been calculated else flag =0
-{
-        printf("\n---------------%s----------------\n",program_name);
-        printf("\tSIZE\t TIME_SEC\t Gflops\n");
-        if(flag==1)
-        printf("\t%d\t%f\t%lf\t",size,tsec,gflops);
-        else
-        printf("\t%d\t%lf\t%lf\t",size,"---","---");
-
-}
-
-/*funtion to check blocks per grid and threads per block*/
-void check_block_grid_dim(cudaDeviceProp devProp,dim3 blockDim,dim3 gridDim)
-{
-
-        if( blockDim.x >= devProp.maxThreadsDim[0] || blockDim.y >= devProp.maxThreadsDim[1] || blockDim.z >= devProp.maxThreadsDim[2] )
-        {
-                printf("\nBlock Dimensions exceed the maximum limits:%d * %d * %d \n",devProp.maxThreadsDim[0],devProp.maxThreadsDim[1],devProp.maxThreadsDim[2]);
-               exit(-1);
-        }
-
-        if( gridDim.x >= devProp.maxGridSize[0] || gridDim.y >= devProp.maxGridSize[1] || gridDim.z >= devProp.maxGridSize[2] )
-        {
-                printf("\nGrid Dimensions exceed the maximum limits:%d * %d * %d \n",devProp.maxGridSize[0],devProp.maxGridSize[1],devProp.maxGridSize[2]);
-               exit(-1);
-        }
-}
-
-
-/*Get the number of GPU devices present on the host */
-int get_DeviceCount()
-{
-        int count;
-        cudaGetDeviceCount(&count);
-        return count;
-}
-
-
-/*Fill in the vector with double precision values */
-void fill_dp_vector(double* vec,int size)
+void fill_matrix(double* vec,int size)
 {
         int ind;
         for(ind=0;ind<size;ind++)
@@ -179,24 +76,19 @@ void fill_dp_vector(double* vec,int size)
 }
 
 
-/////////////////////////////////////////////////////////////////////////////////////////
-//
-// MatVect : this kernel will perform actual MatrixVector Multiplication 
-//
-/////////////////////////////////////////////////////////////////////////////////////////
-__global__ void MatVectMultiplication(double *device_Mat, double *device_Vect,int matRowSize, int vlength,double *device_ResVect)
+__global__ void MatVectMultiplication(double *device_matrix, double *device_vector,int mat_row_size, int v_length,double *device_result)
   {
         int tidx = blockIdx.x*blockDim.x + threadIdx.x;
         int tidy = blockIdx.y*blockDim.y + threadIdx.y;
         int tindex=tidx+gridDim.x*BLOCKSIZE*tidy;
 
 
-        if(tindex<matRowSize)
+        if(tindex<mat_row_size)
 	{
-                int i;int m=tindex*vlength;
-                device_ResVect[tindex]=0.00;
-                for(i=0;i<vlength;i++)
-                device_ResVect[tindex]+=device_Mat[m+i]*device_Vect[i];
+                int i;int m=tindex*v_length;
+                device_result[tindex]=0.00;
+                for(i=0;i<v_length;i++)
+                device_result[tindex]+=device_matrix[m+i]*device_vector[i];
 	}
 
      __syncthreads();
@@ -205,117 +97,84 @@ __global__ void MatVectMultiplication(double *device_Mat, double *device_Vect,in
 
 
 
-/*function to launch kernel*/
-void launch_Kernel_MatVectMul()
+void MatVectMul()
 {
-/*          threads_per_block, blocks_per_grid  */
-
-
         int max=BLOCKSIZE*BLOCKSIZE;
-        int BlocksPerGrid= matRowSize/max+1;
+        int BlocksPerGrid= mat_row_size/max+1;
         dim3 dimBlock(BLOCKSIZE,BLOCKSIZE);
-        if(matRowSize%max==0)BlocksPerGrid--;
+        if(mat_row_size%max==0)BlocksPerGrid--;
         dim3 dimGrid(1,BlocksPerGrid);
-        check_block_grid_dim(deviceProp,dimBlock,dimGrid);
-
-        MatVectMultiplication<<<dimGrid,dimBlock>>>(device_Mat,device_Vect,matRowSize,vlength,device_ResVect);
+        
+        MatVectMultiplication<<<dimGrid,dimBlock>>>(device_matrix,device_vector,mat_row_size,v_length,device_result);
 
 }
 
 
-/*main function*/
 double sim()
 {
-	// Vector length , Matrix Row and Col sizes..............
-       	vlength = matColSize = size;
-       	matRowSize = size;
-    
-     	//  printf("this programs does computation of square matrix only\n");
+       	v_length = mat_col_size = mat_row_size = size;
+       	
 	float elapsedTime,Tsec;
 	cudaEvent_t start,stop;
 
-	
-  	/*allocating the memory for each matrix */
-	host_Mat =new double[matRowSize*matColSize];
-	host_Vect = new double[vlength];
-	host_ResVect = new double[matRowSize];
+
+	host_matrix =new double[mat_row_size*mat_col_size];
+	host_vector = new double[v_length];
+	host_result = new double[mat_row_size];
 
 	
-	// ---------------checking host memory  for error..............................
-	 if(host_Mat==NULL)
-                mem_error("host_Mat","vectmatmul",matRowSize*matColSize,"double");
+        if(host_matrix==NULL || host_vector == NULL || host_result == NULL)
+        {
+                printf("Not enough memory\n");
+                exit(-1);
+        }
 
-         if(host_Vect==NULL)
-                mem_error("host_Vect","vectmatmul",vlength,"double");
+	fill_matrix(host_matrix,mat_row_size*mat_col_size);
+	fill_matrix(host_vector,v_length);
 
-         if(host_ResVect==NULL)
-                mem_error("host_ResVect","vectmatmul",matRowSize,"double");
+ 	
+        cudaEventCreate (&start);
+        cudaEventCreate (&stop);
 
-	//--------------Initializing the input arrays..............
-	fill_dp_vector(host_Mat,matRowSize*matColSize);
-	fill_dp_vector(host_Vect,vlength);
+	cudaMalloc( (void**)&device_matrix, mat_row_size*mat_col_size* sizeof(double));
+	cudaMalloc( (void**)&device_vector, v_length* sizeof(double));
+	cudaMalloc( (void**)&device_result, mat_row_size* sizeof(double));
 
- 	/* allocate memory for GPU events 
-        start = (cudaEvent_t) malloc (sizeof(cudaEvent_t));
-        stop = (cudaEvent_t) malloc (sizeof(cudaEvent_t));
-        if(start==NULL)
-                mem_error("start","vectvectmul",1,"cudaEvent_t");
-        if(stop==NULL)
-                mem_error("stop","vectvectmul",1,"cudaEvent_t");*/
-  	
-	//event creation...
-        CUDA_SAFE_CALL(cudaEventCreate (&start));
-        CUDA_SAFE_CALL(cudaEventCreate (&stop));
+	cudaMemcpy((void*)device_matrix, (void*)host_matrix, mat_row_size*mat_col_size*sizeof(double) ,cudaMemcpyHostToDevice);
+	cudaMemcpy((void*)device_vector, (void*)host_vector,v_length*sizeof(double),cudaMemcpyHostToDevice);
 
-  	//allocating memory on GPU
-	CUDA_SAFE_CALL(cudaMalloc( (void**)&device_Mat, matRowSize*matColSize* sizeof(double)));
-	CUDA_SAFE_CALL(cudaMalloc( (void**)&device_Vect, vlength* sizeof(double)));
-	CUDA_SAFE_CALL(cudaMalloc( (void**)&device_ResVect, matRowSize* sizeof(double)));
-
- 	//moving data from CPU to GPU
-	CUDA_SAFE_CALL(cudaMemcpy((void*)device_Mat, (void*)host_Mat, matRowSize*matColSize*sizeof(double) ,cudaMemcpyHostToDevice));
-	CUDA_SAFE_CALL(cudaMemcpy((void*)device_Vect, (void*)host_Vect,vlength*sizeof(double),cudaMemcpyHostToDevice));
-
-	// Launching kernell..........	
-	CUDA_SAFE_CALL(cudaEventRecord (start, 0));
+	cudaEventRecord (start, 0));
 	
-	launch_Kernel_MatVectMul();
+	MatVectMul();
 	
-	CUDA_SAFE_CALL(cudaEventRecord (stop, 0));
-	CUDA_SAFE_CALL(cudaEventSynchronize (stop));
-	CUDA_SAFE_CALL(cudaEventElapsedTime ( &elapsedTime, start, stop));
+	cudaEventRecord (stop, 0);
+	cudaEventSynchronize (stop);
+	cudaEventElapsedTime ( &elapsedTime, start, stop);
 
 	Tsec= 1.0e-3*elapsedTime;
  	
-	// calling funtion for measuring Gflops
         calculate_gflops(Tsec);
         double ret = calculate_gbs(Tsec);
 	
-	//printing the result on screen
-    	// print_on_screen("MAT VECT MULTIPLICATION",Tsec,calculate_gflops(Tsec),size,1); 
-        // print_on_screen("MAT VECT MULTIPLICATION",Tsec,calculate_gbs(Tsec),size,1); 
+	
+  	cudaMemcpy((void*)host_result, (void*)device_result,mat_row_size*sizeof(double),cudaMemcpyDeviceToHost);
 
- 
-	//retriving result from device
-  	CUDA_SAFE_CALL(cudaMemcpy((void*)host_ResVect, (void*)device_ResVect,matRowSize*sizeof(double),cudaMemcpyDeviceToHost));
-
-	// CPU calculation..and checking error deviation....
-	CPU_MatVect();
-  	relError(cpu_ResVect,host_ResVect,size);
+	cpu_multiply();
+  	relative_error(cpu_result,host_result,size);
    	printf("\n ----------------------------------------------------------------------\n");
 
 	/*free the memory from GPU */
 	double *array[3];
-        array[0]=device_Mat;
-        array[1]=device_Vect;
-        array[2]=device_ResVect;
-        dfree(array,3);
+        array[0]=device_matrix;
+        array[1]=device_vector;
+        array[2]=device_result;
+        device_free(array,3);
 
 	//free host memory----------
-        free(host_Mat);
-        free(host_Vect);
-        free(host_ResVect);
-        free(cpu_ResVect);
+        free(host_matrix);
+        free(host_vector);
+        free(host_result);
+        free(cpu_result);
 
 	return ret;
 }// end of main
@@ -323,11 +182,7 @@ double sim()
 
 int main()
 {       
-
-        device_Count=get_DeviceCount();
-        printf("\n\nNUmber of Devices : %d\n\n", device_Count);
-
-        // Device Selection, Device 1: Tesla C1060
+       
         cudaSetDevice(0);
       
         int device;
