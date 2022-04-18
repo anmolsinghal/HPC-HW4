@@ -62,7 +62,7 @@ int main(int argc, char * argv[])
         cudaDeviceSynchronize();
         if(cudaGetLastError() != cudaSuccess)
         {
-            prinft("Error Launching Kerne\n");
+            printf("Error Launching Kerne\n");
             return 1;
         }
         swap(&u, &u_new);
