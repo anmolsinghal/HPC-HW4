@@ -28,6 +28,12 @@ double calculate_gflops(float &Tsec)
 	return gflops;
 }
 
+double calculate_gbs(float &Tsec)
+{
+        float bw=(1.0e-9 * (( size*size +1 )/Tsec));
+	return bw;
+}
+
 /*sequential function for mat vect multiplication*/
 void CPU_MatVect()
 {
@@ -187,10 +193,10 @@ __global__ void MatVectMultiplication(double *device_Mat, double *device_Vect,in
 
         if(tindex<matRowSize)
 	{
-        int i;int m=tindex*vlength;
-	device_ResVect[tindex]=0.00;
-	for(i=0;i<vlength;i++)
-	device_ResVect[tindex]+=device_Mat[m+i]*device_Vect[i];
+                int i;int m=tindex*vlength;
+                device_ResVect[tindex]=0.00;
+                for(i=0;i<vlength;i++)
+                device_ResVect[tindex]+=device_Mat[m+i]*device_Vect[i];
 	}
 
      __syncthreads();
@@ -205,14 +211,14 @@ void launch_Kernel_MatVectMul()
 /*          threads_per_block, blocks_per_grid  */
 
 
-int max=BLOCKSIZE*BLOCKSIZE;
-int BlocksPerGrid=matRowSize/max+1;
- dim3 dimBlock(BLOCKSIZE,BLOCKSIZE);
-if(matRowSize%max==0)BlocksPerGrid--;
-dim3 dimGrid(1,BlocksPerGrid);
- check_block_grid_dim(deviceProp,dimBlock,dimGrid);
+        int max=BLOCKSIZE*BLOCKSIZE;
+        int BlocksPerGrid= matRowSize/max+1;
+        dim3 dimBlock(BLOCKSIZE,BLOCKSIZE);
+        if(matRowSize%max==0)BlocksPerGrid--;
+        dim3 dimGrid(1,BlocksPerGrid);
+        check_block_grid_dim(deviceProp,dimBlock,dimGrid);
 
-MatVectMultiplication<<<dimGrid,dimBlock>>>(device_Mat,device_Vect,matRowSize,vlength,device_ResVect);
+        MatVectMultiplication<<<dimGrid,dimBlock>>>(device_Mat,device_Vect,matRowSize,vlength,device_ResVect);
 
 }
 
@@ -296,9 +302,11 @@ int main()
  	
 	// calling funtion for measuring Gflops
         calculate_gflops(Tsec);
+        calculate_gbs(Tsec);
 	
 	//printing the result on screen
     	print_on_screen("MAT VECT MULTIPLICATION",Tsec,calculate_gflops(Tsec),size,1); 
+        print_on_screen("MAT VECT MULTIPLICATION",Tsec,calculate_gbs(Tsec),size,1); 
 
  
 	//retriving result from device
